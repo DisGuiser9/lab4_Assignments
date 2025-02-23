@@ -12,6 +12,8 @@
 ```
 
 ### Code
-face_recognition_dl.py    Algorithm based on Deep Learning(Pytorch)
-face_recognition_cv.py    Algorithm based on Deep Learning(OpenCV)
-rename.ipynb              Rename the images
+```python
+face_recognition_dl.py    # Algorithm based on Deep Learning(Pytorch)       
+face_recognition_cv.py    # Algorithm based on Deep Learning(OpenCV)            
+rename.ipynb              # Rename the images          
+```
