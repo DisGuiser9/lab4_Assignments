@@ -1,0 +1,10 @@
+torch==2.4.1+cu121
+torchaudio==2.4.1+cu121
+torchvision==0.19.+cu121
+-f https://download.pytorch.org/whl/torch_stable.html
+
+opencv-contrib-python
+pandas
+matplotlib
+pillow
+yolov5
