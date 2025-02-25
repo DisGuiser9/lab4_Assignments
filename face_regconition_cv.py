@@ -131,7 +131,6 @@ face_recognizer.train(faces, np.array(labels))
 
 print("Predicting images...")
 
-#load test images
 test_imgs_path_1 = "./test/1"
 test_imgs_path_2 = "./test/2"
 test_imgs_path_3 = "./test/3"
@@ -143,10 +142,16 @@ predicted_img3 = predict(test_imgs_path_3, face_recognizer, subjects)
 
 print("Prediction complete")
 
-#display both images
-cv2.imshow(subjects[1], cv2.resize(predicted_img1[0], (500, 400)))
-cv2.imshow(subjects[2], cv2.resize(predicted_img2[1], (500, 400)))
-cv2.imshow(subjects[3], cv2.resize(predicted_img3[3], (500, 400)))
+os.makedirs("./opencv/img1", exist_ok=True)
+os.makedirs("./opencv/img2", exist_ok=True)
+os.makedirs("./opencv/img3", exist_ok=True)
+
+for i in range(len(predicted_img1)):
+    cv2.imwrite(f"./opencv/img1/img{i}.jpg", predicted_img1[i])
+for i in range(len(predicted_img2)):
+    cv2.imwrite(f"./opencv/img2/img{i}.jpg", predicted_img2[i])
+for i in range(len(predicted_img3)):
+    cv2.imwrite(f"./opencv/img3/img{i}.jpg", predicted_img3[i])
 
 cv2.waitKey(0)
 cv2.destroyAllWindows()
