@@ -25,7 +25,7 @@ class FaceDataset(Dataset):
             dir_path = os.path.join(data_folder_path, dir_name)
             if os.path.isdir(dir_path):
                 if dir_name.isdigit():
-                    label = int(dir_name) - 1
+                    label = int(dir_name)
                 else:
                     label = self.class_labels.index(dir_name)
 
@@ -70,7 +70,7 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-class_labels = ['CR7', 'Faker', 'KeJie']
+class_labels = ['Unknown', 'CR7', 'Faker', 'KeJie']
 
 train_folder = './train'
 train_dataset = FaceDataset(data_folder_path=train_folder, class_labels=class_labels, transform=transform)
@@ -109,9 +109,9 @@ def train(model, train_loader, criterion, optimizer, device, epochs):
         accuracy = 100 * correct / total
         print(f"Epoch {epoch+1}, Loss: {running_loss/len(train_loader):.4f}, Accuracy: {accuracy:.4f}%")
 
-train(model, train_loader, criterion, optimizer, device, epochs=30)
+train(model, train_loader, criterion, optimizer, device, epochs=40)
 
-def test_and_save_images(model, test_loader, device, output_dir='./predictions'):
+def test_and_save_images(model, test_loader, device, class_labels, output_dir='./predictions'):
     model.eval()  # Set model to evaluation mode
     
     # Create the output directory if it doesn't exist
@@ -140,16 +140,21 @@ def test_and_save_images(model, test_loader, device, output_dir='./predictions')
                 img = (img * 0.229 + 0.485) * 255  # Reverse normalization
                 img = img.astype(np.uint8)
                 
-                # Get the original label (class number)
-                original_label = labels[i].item()
+                original_label = class_labels[labels[i].item()]
+                predicted_class_index = preds[i].item()
+
+                # Ensure the predicted class index is within bounds
+                if predicted_class_index < len(class_labels):
+                    predicted_class = class_labels[predicted_class_index]
+                else:
+                    predicted_class = "Unknown"  # If out of range, assign to Unknown
                 
-                # Create a folder for the original label if it doesn't exist
                 label_folder = os.path.join(output_dir, str(original_label))
                 if not os.path.exists(label_folder):
                     os.makedirs(label_folder)
                 
-                # Generate a file name based on the index
-                img_filename = os.path.join(label_folder, f"{i}.jpg")
+                # Generate a file name based on both predicted and original labels
+                img_filename = os.path.join(label_folder, f"{predicted_class}_{original_label}_{i}.jpg")
                 
                 # Save the image
                 cv2.imwrite(img_filename, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))  # Convert back to BGR for OpenCV
@@ -172,4 +177,4 @@ test_folder = './test'
 test_dataset = FaceDataset(data_folder_path=test_folder, class_labels=class_labels, transform=transform)
 test_loader = DataLoader(test_dataset, batch_size=20, shuffle=False)
 
-test_accuracy = test_and_save_images(model, test_loader, device, output_dir='./deeplearning')
+test_accuracy = test_and_save_images(model, test_loader, device, class_labels, output_dir='./deeplearning')

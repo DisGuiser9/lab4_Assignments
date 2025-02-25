@@ -1,1 +1,1 @@
-# 初始化 MTCNN 人脸检测模型
+            # Save images based on the predicted class
