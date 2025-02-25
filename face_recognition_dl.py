@@ -1,103 +1,91 @@
-import torch
-import cv2
-import torch.optim as optim
-import torch.nn as nn
 import os
 import numpy as np
-import matplotlib.pyplot as plt
-
+import torch
+import torch.optim as optim
+import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
-from PIL import Image
 from torchvision import models, transforms
+from PIL import Image
+import cv2
+from facenet_pytorch import MTCNN, InceptionResnetV1
 from tqdm import tqdm
 
-model = torch.hub.load('ultralytics/yolov5', 'yolov5s')
-resnet_model = models.resnet18(pretrained=True)
-resnet_model.eval()
-
-
-def detect_faces(img_path):
-    img = cv2.imread(img_path)  # 读取图像
-    results = model(img)  # 使用 YOLOv5 进行目标检测
-    faces = results.pandas().xywh[0]  # 获取检测结果
-    
-    # 选择置信度高于 0.5 的人脸
-    faces = faces[faces['confidence'] > 0.5]
-    
-    detected_faces = []
-    for _, row in faces.iterrows():
-        x1, y1, x2, y2 = row[['xmin', 'ymin', 'xmax', 'ymax']].values
-        face = img[int(y1):int(y2), int(x1):int(x2)]  # 截取人脸区域
-        detected_faces.append(face)
-    
-    return detected_faces
+mtcnn_detector = MTCNN()
 
 class FaceDataset(Dataset):
-    def __init__(self, image_folder, class_labels, transform=None):
-        self.image_folder = image_folder
+    def __init__(self, data_folder_path, class_labels, transform=None):
+        self.data_folder_path = data_folder_path
         self.class_labels = class_labels
         self.transform = transform
-        self.img_paths = [os.path.join(image_folder, f) for f in os.listdir(image_folder)]
-        
+
+        self.img_paths = []
+        self.labels = []
+
+        for dir_name in os.listdir(data_folder_path):
+            dir_path = os.path.join(data_folder_path, dir_name)
+            if os.path.isdir(dir_path):
+                if dir_name.isdigit():
+                    label = int(dir_name) - 1
+                else:
+                    label = self.class_labels.index(dir_name)
+
+                for img_name in os.listdir(dir_path):
+                    if img_name.endswith(('.jpg', '.png')):
+                        img_path = os.path.join(dir_path, img_name)
+                        self.img_paths.append(img_path)
+                        self.labels.append(label)
+
     def __len__(self):
         return len(self.img_paths)
-    
-    def __getitem__(self, idx):
-        # 获取图片路径
-        img_path = self.img_paths[idx]
-        img = cv2.imread(img_path)  # 读取图片
-        
-        # 获取标签（假设标签在文件名中，格式为: "image_classname.jpg"）
-        label = self.img_paths[idx].split("/")[-1].split("_")[0]
-        label = self.class_labels.index(label)  # 将类别名转换为类别编号
-        
-        # 检测人脸并裁剪
-        faces = detect_faces(img_path)
-        
-        # 随机选择一个人脸进行分类
-        if len(faces) > 0:
-            face_img = faces[0]  # 选择第一张检测到的人脸
-        else:
-            face_img = img  # 如果没有检测到人脸，使用原图
 
-        # 转换为 PIL 格式并应用数据增强
-        face_pil = Image.fromarray(cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB))
+    def __getitem__(self, idx):
+        img_path = self.img_paths[idx]
+        label = self.labels[idx]
+
+        img = cv2.imread(img_path)
+
+        faces, _ = mtcnn_detector.detect(img)
+        
+        if faces is not None and len(faces) > 0:
+            x1, y1, x2, y2 = faces[0]
+            face = img[int(y1):int(y2), int(x1):int(x2)]
+            face_resized = cv2.resize(face, (224, 224))
+        else:
+            face_resized = cv2.resize(img, (224, 224))
+
+        face_pil = Image.fromarray(cv2.cvtColor(face_resized, cv2.COLOR_BGR2RGB))
+
         if self.transform:
             face_pil = self.transform(face_pil)
-        
+
         return face_pil, label
 
-# 数据转换（标准化和调整大小）
+
 transform = transforms.Compose([
-    transforms.Resize((224, 224)),
+    transforms.RandomHorizontalFlip(p=0.5),
+    transforms.RandomRotation(degrees=15),
+    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+    transforms.Resize((224, 224)),    
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-# 初始化数据集
 class_labels = ['CR7', 'Faker', 'KeJie']
-train_folder = './train' 
-test_folder= './test'
 
-train_dataset = FaceDataset(image_folder=train_folder, class_labels=class_labels, transform=transform)
-test_dataset = FaceDataset(image_folder=test_folder, class_labels=class_labels, transform=transform)
-
+train_folder = './train'
+train_dataset = FaceDataset(data_folder_path=train_folder, class_labels=class_labels, transform=transform)
 train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False)
 
-model = models.resnet18(pretrained=True)
-model.fc = nn.Linear(model.fc.in_features, len(class_labels))  # 修改最后一层，适应你的分类任务
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = InceptionResnetV1(pretrained='vggface2').eval().to(device)
+model.logits = nn.Linear(model.logits.in_features, len(class_labels))  
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model.to(device)
 
-# 损失函数和优化器
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=1e-4)
+optimizer = optim.Adam(model.parameters(), lr=5e-5)
 
-# 训练函数
-def train(model, train_loader, criterion, optimizer, device, epochs=10):
+def train(model, train_loader, criterion, optimizer, device, epochs):
     model.train()
     for epoch in range(epochs):
         running_loss = 0.0
@@ -105,89 +93,83 @@ def train(model, train_loader, criterion, optimizer, device, epochs=10):
         total = 0
         for inputs, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}"):
             inputs, labels = inputs.to(device), labels.to(device)
-            
-            # 前向传播
+
             optimizer.zero_grad()
             outputs = model(inputs)
             loss = criterion(outputs, labels)
-            
-            # 反向传播
+
             loss.backward()
             optimizer.step()
-            
+
             running_loss += loss.item()
             _, predicted = torch.max(outputs, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
-        
+
         accuracy = 100 * correct / total
-        print(f"Epoch {epoch+1}, Loss: {running_loss/len(train_loader)}, Accuracy: {accuracy}%")
+        print(f"Epoch {epoch+1}, Loss: {running_loss/len(train_loader):.4f}, Accuracy: {accuracy:.4f}%")
 
-# 训练模型
-train(model, train_loader, criterion, optimizer, device, epochs=10)
+train(model, train_loader, criterion, optimizer, device, epochs=30)
 
-# 推理函数
-def test(model, test_loader, device):
-    model.eval()  # 设置为评估模式
-    all_preds = []
-    all_labels = []
-
+def test_and_save_images(model, test_loader, device, output_dir='./predictions'):
+    model.eval()  # Set model to evaluation mode
+    
+    # Create the output directory if it doesn't exist
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    correct = 0  # Initialize counter for correct predictions
+    total = 0    # Initialize counter for total predictions
+    
     with torch.no_grad():
         for inputs, labels in tqdm(test_loader, desc="Testing"):
             inputs, labels = inputs.to(device), labels.to(device)
             
-            # 前向传播
+            # Forward pass
             outputs = model(inputs)
-            _, predicted = torch.max(outputs, 1)
+            _, preds = torch.max(outputs, 1)
             
-            all_preds.extend(predicted.cpu().numpy())  # 将预测结果添加到列表中
-            all_labels.extend(labels.cpu().numpy())    # 将真实标签添加到列表中
-
-    return all_preds, all_labels
-
-
-# 测试模型并计算准确率
-all_preds, all_labels = test(model, test_loader, device)
-
-# 计算准确率
-correct = sum(np.array(all_preds) == np.array(all_labels))
-accuracy = correct / len(all_labels) * 100
-print(f"Test Accuracy: {accuracy:.2f}%")
-
-
-def visualize(img_path, predicted_class):
-    img = cv2.imread(img_path)
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # 转换为 RGB 格式
+            # Count correct predictions
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
+            
+            # Save images based on the original label (not predicted class)
+            for i in range(inputs.size(0)):
+                # Convert tensor to numpy image
+                img = inputs[i].cpu().numpy().transpose(1, 2, 0)  # Convert from (C, H, W) to (H, W, C)
+                img = (img * 0.229 + 0.485) * 255  # Reverse normalization
+                img = img.astype(np.uint8)
+                
+                # Get the original label (class number)
+                original_label = labels[i].item()
+                
+                # Create a folder for the original label if it doesn't exist
+                label_folder = os.path.join(output_dir, str(original_label))
+                if not os.path.exists(label_folder):
+                    os.makedirs(label_folder)
+                
+                # Generate a file name based on the index
+                img_filename = os.path.join(label_folder, f"{i}.jpg")
+                
+                # Save the image
+                cv2.imwrite(img_filename, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))  # Convert back to BGR for OpenCV
     
-    # 在图像中显示预测类别
-    plt.imshow(img_rgb)
-    plt.title(f"Predicted Class: {predicted_class}")
-    plt.axis('off')  # 不显示坐标轴
-    plt.show()
+    accuracy = (correct / total) * 100
+    print(f"Test Accuracy: {accuracy:.2f}%")
 
-def visualize_batch(inputs, labels, preds, class_labels):
-    # 转换为 numpy 数组
-    inputs = inputs.cpu().numpy()
-    labels = labels.cpu().numpy()
-    preds = preds.cpu().numpy()
-    
-    # 显示图像
-    fig, ax = plt.subplots(1, 8, figsize=(16, 2))
-    for i in range(8):
-        img = inputs[i].transpose(1, 2, 0)  # 转换为 HWC 格式
-        img = (img * 0.229 + 0.485) * 255  # 反标准化
-        img = img.astype(np.uint8)
-        
-        ax[i].imshow(img)
-        ax[i].axis('off')
-        ax[i].set_title(f"Pred: {class_labels[preds[i]]}\nTrue: {class_labels[labels[i]]}")
-    
-    plt.show()
+    # Save Logs
+    with open(f'./{output_dir}/logs.txt', 'a') as f:
+        f.write(f"Test Accuracy: {accuracy:.2f}%\n")
 
-# 示例：在测试时批量显示预测结果
-for inputs, labels in test_loader:
-    inputs, labels = inputs.to(device), labels.to(device)
-    outputs = model(inputs)
-    _, preds = torch.max(outputs, 1)
-    visualize_batch(inputs, labels, preds, class_labels)
-    break  # 只显示第一批
+    return accuracy
+
+transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+
+test_folder = './test'
+test_dataset = FaceDataset(data_folder_path=test_folder, class_labels=class_labels, transform=transform)
+test_loader = DataLoader(test_dataset, batch_size=20, shuffle=False)
+
+test_accuracy = test_and_save_images(model, test_loader, device, output_dir='./deeplearning')
