@@ -73,44 +73,37 @@ def draw_text(img, text, x, y):
 
 
 def predict(subject_dir_path, face_recognizer, subjects):
-    processed_images = []  # 存储所有处理后的图像
+    processed_images = []  
     
-    # 获取目录下所有文件
     for image_name in os.listdir(subject_dir_path):
-        # 跳过隐藏文件和子目录
         if image_name.startswith("."):
             continue
         print("image name:", image_name)
         image_path = os.path.join(subject_dir_path, image_name)
         
-        # 读取图像
         test_img = cv2.imread(image_path)
         if test_img is None:
-            print(f"无法读取图像：{image_name}")
+            print(f"No img：{image_name}")
             continue
             
         img = test_img.copy()
         
         try:
-            # 人脸检测和预处理
             face, rect = detect_face(img)
-            resized_face = cv2.resize(face, (200, 300))  # 根据模型需求调整尺寸
+            resized_face = cv2.resize(face, (200, 300))
         except Exception as e:
-            print(f"图像 {image_name} 未识别人脸：{str(e)}")
+            print(f"No face recognized in {image_name} imgs: {str(e)}")
             continue
         
-        # 进行预测
         label, confidence = face_recognizer.predict(resized_face)
-        label_text = f"{subjects[label]} ({confidence:.2f})"  # 显示置信度
+        label_text = f"{subjects[label]} ({confidence:.2f})"  
         
-        # 绘制标注
         draw_rectangle(img, rect)
         draw_text(img, label_text, rect[0], rect[1]-5)
         
-        # 将处理后的图像添加到列表
         processed_images.append(img)
     
-    return processed_images  # 返回包含所有图像的列表
+    return processed_images  
 
 
 subjects = ["", "CR7", "Faker", "KeJie"]
@@ -123,7 +116,7 @@ print("Total faces: ", len(faces))
 print("Total labels: ", len(labels))
 
 
-face_recognizer = cv2.face.EigenFaceRecognizer_create()
+face_recognizer = cv2.face.EigenFaceRecognizer()
 
 #train our face recognizer of our training faces
 face_recognizer.train(faces, np.array(labels))
