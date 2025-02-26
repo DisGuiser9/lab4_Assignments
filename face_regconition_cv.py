@@ -6,7 +6,7 @@ def detect_face(img):
     
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=10)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
 
     if (len(faces) == 0):
         return None, None
@@ -18,16 +18,11 @@ def detect_face(img):
 
 def prepare_training_data(data_folder_path):
     
-    #------STEP-1--------
-    #get the directories (one directory for each subject) in data folder
     dirs = os.listdir(data_folder_path)
     
-    #list to hold all subject faces
     faces = []
-    #list to hold labels for all subjects
     labels = []
     
-    #let's go through each directory and read images within it
     for dir_name in dirs:
             
         label = int(dir_name)
@@ -87,7 +82,7 @@ def predict(subject_dir_path, face_recognizer, subjects):
             continue
             
         img = test_img.copy()
-        
+
         try:
             face, rect = detect_face(img)
             resized_face = cv2.resize(face, (200, 300))
@@ -116,7 +111,7 @@ print("Total faces: ", len(faces))
 print("Total labels: ", len(labels))
 
 
-face_recognizer = cv2.face.EigenFaceRecognizer()
+face_recognizer = cv2.face.EigenFaceRecognizer_create()
 
 #train our face recognizer of our training faces
 face_recognizer.train(faces, np.array(labels))
